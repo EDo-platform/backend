@@ -1,1 +1,8 @@
-spring.application.name=edo
+spring:
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+app:
+  upload-dir: uploads
