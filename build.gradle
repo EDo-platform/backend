@@ -23,6 +23,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
 
+	implementation 'com.squareup.okhttp3:okhttp:4.12.0'                 // Clova 호출용
+	implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2' // 응답 파싱
+	implementation 'org.apache.pdfbox:pdfbox:2.0.30'                    // PDF→이미지
+	implementation 'org.apache.poi:poi-ooxml:5.2.5'                     // DOCX 텍스트 추출
+
 	compileOnly 'org.projectlombok:lombok:1.18.32'
 	annotationProcessor 'org.projectlombok:lombok:1.18.32'
 	testCompileOnly 'org.projectlombok:lombok:1.18.32'
