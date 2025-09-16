@@ -1,4 +1,4 @@
-package com.edo.backend;
+package com.edo.backend.fileuplaod;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
