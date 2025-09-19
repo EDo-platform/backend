@@ -19,12 +19,18 @@ public class FileController {
 
     private final FileStorageService fileStorageService;
 
+    // 파일 업로드 api
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Map<String, String>> uploadFile(@RequestPart("file") MultipartFile file) throws IOException {
-        String savedPath = fileStorageService.saveFile(file);
+    public ResponseEntity<Map<String, Object>> uploadFile(@RequestPart("file") MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("ok", false, "error", "file is empty"));
+        }
+        FileMetadata meta = fileStorageService.store(file);
         return ResponseEntity.ok(Map.of(
-                "message", "파일 업로드 성공",
-                "path", savedPath
+                "ok", true,
+                "fileId", meta.getOriginalName(),
+                "size", meta.getSize(),
+                "contentType", meta.getContentType()
         ));
     }
 }
