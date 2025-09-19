@@ -22,35 +22,26 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FileStorageService {
 
-    @Value("${app.upload-dir}")
-    private String uploadDir;
+//    @Value("${app.upload-dir}")
+//    private String uploadDir;
 
     private final FileMetadataRepository fileRepo;
 
     // 기존 saveFile에서 store로 변경
     public FileMetadata store(MultipartFile file) throws IOException {
-        Path uploadPath = Path.of(uploadDir);
-        Files.createDirectories(uploadPath);
-
         String fileId = UUID.randomUUID().toString();
 
         String originalName = Objects.requireNonNullElse(file.getOriginalFilename(), "unnamed");
-        String ext = getExt(originalName);
+        byte[] bytes = file.getBytes();
 
-        String savedName = ext.isBlank() ? fileId : (fileId + "." + ext);
+        FileMetadata meta = FileMetadata.builder()
+                .id(fileId)
+                .originalName(originalName)
+                .contentType(file.getContentType())
+                .size(file.getSize())
+                .data(bytes)                     // ✅ DB에 BLOB 저장
+                .build();
 
-        Path targetPath = uploadPath.resolve(savedName);
-        try (InputStream in = file.getInputStream()) {
-            Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        FileMetadata meta = new FileMetadata(
-                fileId,
-                originalName,
-                file.getContentType(),
-                file.getSize(),
-                targetPath.toString()
-        );
         return fileRepo.save(meta);
     }
 
@@ -78,13 +69,17 @@ public class FileStorageService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "file not found"));
     }
 
-    public Resource load(String fileId) throws MalformedURLException {
-        FileMetadata meta = getMeta(fileId);
-        return new UrlResource(Path.of(meta.getStoragePath()).toUri());
-    }
+//    public Resource load(String fileId) throws MalformedURLException {
+//        FileMetadata meta = getMeta(fileId);
+//        return new UrlResource(Path.of(meta.getStoragePath()).toUri());
+//    }
 
     private String getExt(String name) {
         int i = name.lastIndexOf('.');
         return (i < 0) ? "" : name.substring(i + 1);
+    }
+
+    public byte[] getBytes(String fileId) {
+        return getMeta(fileId).getData();       // DB에서 바이너리 꺼내기
     }
 }

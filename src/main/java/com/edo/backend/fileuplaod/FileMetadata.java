@@ -1,8 +1,7 @@
 package com.edo.backend.fileuplaod;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -21,15 +20,21 @@ public class FileMetadata {
     private String contentType;
     private long size;
 
-    private String storagePath; // 파일 경로(위치는 로컬 OR cloud 내)
+//    private String storagePath; // 파일 경로(위치는 로컬 OR cloud 내)
+
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    private byte[] data;
+
     private Instant createdAt = Instant.now();
 
-    public FileMetadata(String id, String originalName, String contentType, long size, String storagePath) {
+    @Builder
+    public FileMetadata(String id, String originalName, String contentType, long size, byte[] data) {
         this.id = id;
         this.originalName = originalName;
         this.contentType = contentType;
         this.size = size;
-        this.storagePath = storagePath;
+        this.data = data;
     }
 
 
