@@ -69,10 +69,10 @@ public class FileStorageService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "file not found"));
     }
 
-    public Resource load(String fileId) throws MalformedURLException {
-        FileMetadata meta = getMeta(fileId);
-        return new UrlResource(Path.of(meta.getStoragePath()).toUri());
-    }
+//    public Resource load(String fileId) throws MalformedURLException {
+//        FileMetadata meta = getMeta(fileId);
+//        return new UrlResource(Path.of(meta.getStoragePath()).toUri());
+//    }
 
     private String getExt(String name) {
         int i = name.lastIndexOf('.');
