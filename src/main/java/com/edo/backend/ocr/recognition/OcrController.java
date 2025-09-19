@@ -1,65 +1,50 @@
 package com.edo.backend.ocr.recognition;
 
+import com.edo.backend.fileuplaod.FileStorageService;
 import com.google.cloud.vision.v1.*;
 import com.google.protobuf.ByteString;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@RequiredArgsConstructor
 public class OcrController {
 
-    @PostMapping(value = "/ocr", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Map<String, Object> ocr(@RequestPart("file") MultipartFile file) throws Exception {
-        Map<String, Object> out = new HashMap<>();
+    private final FileStorageService fileStorageService;
 
-        if (file == null || file.isEmpty()) {
-            out.put("ok", false);
-            out.put("error", "file is empty");
-            return out;
-        }
+    @PostMapping(value = "/ocr", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, Object> ocr(@RequestBody OcrRequest req) throws Exception {
+        var meta = fileStorageService.getMeta(req.getFileId());
+        byte[] bytes = Files.readAllBytes(Path.of(meta.getStoragePath()));
 
         try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
-            ByteString content = ByteString.copyFrom(file.getBytes());
+            ByteString content = ByteString.copyFrom(bytes);
             Image img = Image.newBuilder().setContent(content).build();
-
-            // 문서 OCR 권장 + 한글 힌트(선택)
             ImageContext ctx = ImageContext.newBuilder().addLanguageHints("ko").build();
-            Feature feat = Feature.newBuilder()
-                    .setType(Feature.Type.DOCUMENT_TEXT_DETECTION)
-                    .build();
-
+            Feature feat = Feature.newBuilder().setType(Feature.Type.DOCUMENT_TEXT_DETECTION).build();
             AnnotateImageRequest request = AnnotateImageRequest.newBuilder()
-                    .setImage(img)
-                    .addFeatures(feat)
-                    .setImageContext(ctx)
-                    .build();
+                    .setImage(img).addFeatures(feat).setImageContext(ctx).build();
 
             AnnotateImageResponse res = client.batchAnnotateImages(List.of(request)).getResponses(0);
-
             if (res.hasError()) {
-                out.put("ok", false);
-                out.put("error", res.getError().getMessage());
-                return out;
+                return Map.of("ok", false, "error", res.getError().getMessage());
             }
-
-            String text = null;
-            if (res.hasFullTextAnnotation()) {
-                text = res.getFullTextAnnotation().getText();
-            }
-
-            out.put("ok", true);
-            out.put("len", text == null ? 0 : text.length());
-            out.put("preview", (text == null) ? "" : (text.length() > 300 ? text.substring(0, 300) : text));
-            return out;
+            String text = res.hasFullTextAnnotation() ? res.getFullTextAnnotation().getText() : "";
+            return Map.of(
+                    "ok", true,
+                    "fileId", meta.getId(),
+                    "len", text.length(),
+                    "preview", text.length() > 300 ? text.substring(0, 300) : text
+            );
         }
     }
 }
