@@ -1,6 +1,7 @@
 package com.edo.backend.fileuplaod;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -38,18 +39,16 @@ public class FileController {
     }
 
     @GetMapping("/files/{fileId}")
-    public ResponseEntity<Resource> download(@PathVariable String fileId) throws Exception {
+    public ResponseEntity<Resource> download(@PathVariable String fileId) {
         FileMetadata meta = fileStorageService.getMeta(fileId);
-        Resource res = fileStorageService.load(fileId);
-
-        // 한글 파일명 처리
-        String encoded = URLEncoder.encode(meta.getOriginalName(), StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+        byte[] data = meta.getData();
+        String encoded = URLEncoder.encode(meta.getOriginalName(), StandardCharsets.UTF_8).replace("+", "%20");
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(
                         Optional.ofNullable(meta.getContentType()).orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE)))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
-                .body(res);
+                .body(new ByteArrayResource(data));
     }
 
     @GetMapping("/files/{fileId}/meta")
