@@ -1,16 +1,18 @@
 package com.edo.backend.fileuplaod;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/files")
@@ -33,4 +35,21 @@ public class FileController {
                 "contentType", meta.getContentType()
         ));
     }
+
+    @GetMapping("files/{fileId")
+    public ResponseEntity<Resource> download(@PathVariable String fileId) throws Exception {
+        FileMetadata meta = fileStorageService.getMeta(fileId);
+        Resource res = fileStorageService.load(fileId);
+
+        // 한글 파일명 처리
+        String encoded = URLEncoder.encode(meta.getOriginalName(), StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(
+                        Optional.ofNullable(meta.getContentType()).orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE)))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .body(res);
+    }
+
+
 }
