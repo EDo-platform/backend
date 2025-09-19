@@ -30,7 +30,8 @@ public class FileController {
         FileMetadata meta = fileStorageService.store(file);
         return ResponseEntity.ok(Map.of(
                 "ok", true,
-                "fileId", meta.getOriginalName(),
+                "fileId", meta.getId(),
+                "filename", meta.getOriginalName(),
                 "size", meta.getSize(),
                 "contentType", meta.getContentType()
         ));
