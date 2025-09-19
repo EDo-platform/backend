@@ -23,8 +23,7 @@ public class OcrController {
 
     @PostMapping(value = "/ocr", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Map<String, Object> ocr(@RequestBody OcrRequest req) throws Exception {
-        var meta = fileStorageService.getMeta(req.getFileId());
-        byte[] bytes = Files.readAllBytes(Path.of(meta.getStoragePath()));
+        byte[] bytes = fileStorageService.getBytes(req.getFileId());  // ✅ DB에서 바로 읽기
 
         try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
             ByteString content = ByteString.copyFrom(bytes);
@@ -35,16 +34,13 @@ public class OcrController {
                     .setImage(img).addFeatures(feat).setImageContext(ctx).build();
 
             AnnotateImageResponse res = client.batchAnnotateImages(List.of(request)).getResponses(0);
-            if (res.hasError()) {
-                return Map.of("ok", false, "error", res.getError().getMessage());
-            }
+            if (res.hasError()) return Map.of("ok", false, "error", res.getError().getMessage());
+
             String text = res.hasFullTextAnnotation() ? res.getFullTextAnnotation().getText() : "";
-            return Map.of(
-                    "ok", true,
-                    "fileId", meta.getId(),
+            return Map.of("ok", true,
+                    "fileId", req.getFileId(),
                     "len", text.length(),
-                    "preview", text.length() > 300 ? text.substring(0, 300) : text
-            );
+                    "preview", text.length() > 300 ? text.substring(0, 300) : text);
         }
     }
 }
