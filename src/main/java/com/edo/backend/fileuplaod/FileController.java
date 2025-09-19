@@ -51,5 +51,8 @@ public class FileController {
                 .body(res);
     }
 
-
+    @GetMapping("/files/{fildId}/meta")
+    public FileMetadata meta(@PathVariable String fileId) {
+        return fileStorageService.getMeta(fileId);
+    }
 }
