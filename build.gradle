@@ -29,6 +29,10 @@ dependencies {
 	implementation 'com.google.cloud:google-cloud-vision'   // Vision API
 	implementation 'com.google.cloud:google-cloud-storage'  // GCS 업/다운로드 (PDF 워크플로우)
 
+	// 음성 인식 api 의존성
+	implementation("com.google.cloud:google-cloud-speech:4.+")   // v2 클라이언트
+	implementation("com.google.cloud:google-cloud-storage:2.+")  // 긴 파일용(GCS)
+
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0' // env 관련 의존성
 
 	compileOnly 'org.projectlombok:lombok:1.18.32'
