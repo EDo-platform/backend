@@ -20,6 +20,9 @@ spring:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+  jackson:
+    serialization:
+      indent_output: true
 
 app:
   upload-dir: uploads
@@ -27,3 +30,4 @@ app:
 gcp:
   project-id: ${GCP_PROJECT_ID}
   bucket: ${GCS_BUCKET}
+

@@ -32,6 +32,8 @@ dependencies {
 
 	// 음성 인식 api 의존성
 	implementation 'com.google.cloud:google-cloud-speech:4.69.0'
+	implementation 'com.google.cloud:google-cloud-storage:2.40.0'
+
 
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0' // env 관련 의존성
 
