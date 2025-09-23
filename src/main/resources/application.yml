@@ -27,3 +27,4 @@ app:
 gcp:
   project-id: ${GCP_PROJECT_ID}
   bucket: ${GCS_BUCKET}
+
