@@ -26,14 +26,10 @@ public class SttService {
                             .build())
                     .build();
 
-            RecognitionAudio audio = RecognitionAudio.newBuilder()
-                    .setContent(ByteString.copyFrom(audioBytes))
-                    .build();
-
             RecognizeRequest request = RecognizeRequest.newBuilder()
-                    .setRecognizer(recognizer)
+                    .setRecognizer(recognizer)        // "projects/%s/locations/global/recognizers/_"
                     .setConfig(config)
-                    .setAudio(audio)
+                    .setContent(ByteString.copyFrom(audioBytes))  // ⬅️ 여기!
                     .build();
 
             RecognizeResponse response = client.recognize(request);
