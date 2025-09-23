@@ -36,6 +36,9 @@ dependencies {
 	implementation 'com.google.cloud:google-cloud-storage:2.40.0'
 
 
+	implementation "com.fasterxml.jackson.core:jackson-databind:2.17.2"
+	implementation "com.fasterxml.jackson.core:jackson-core:2.17.2"
+
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0' // env 관련 의존성
 
 	compileOnly 'org.projectlombok:lombok:1.18.32'
