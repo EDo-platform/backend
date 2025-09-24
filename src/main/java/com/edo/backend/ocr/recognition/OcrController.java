@@ -30,7 +30,8 @@ public class OcrController {
                 "ok", true,
                 "fileId", req.getFileId(),
                 "len", text.length(),
-                "preview", text.length() > 300 ? text.substring(0, 300) : text
+                "preview", text.length() > 300 ? text.substring(0, 300) : text,
+                "fullText", text
         );
     }
 }
