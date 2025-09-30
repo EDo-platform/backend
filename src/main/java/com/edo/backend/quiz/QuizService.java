@@ -60,8 +60,7 @@ public class QuizService {
 [문항별 설계 가이드]
 1) 어휘(의미/뉘앙스)
    - 정답: 지문 속 표현의 ‘문맥상 의미’를 짧게 바꿔 말한 것.
-   - 오답 4개 유형을 섞어라: (a) 반의 의미, (b) 비슷하지만 핵심 뉘앙스 다른 의미,
-                             (c) 지문 주제 밖의 의미, (d) 문장 일부만 오해한 의미.
+   - 오답 4개 유형을 섞어라: (a) 반의 의미, (b) 비슷하지만 핵심 뉘앙스 다른 의미, (c) 지문 주제 밖의 의미, (d) 문장 일부만 오해한 의미.
 2) 중심내용(키 아이디어)
    - 정답: 글이 ‘주로 말하는 것’을 한 문장으로 압축.
    - 오답: 세부 사례만 확대하거나, 주제의 범위를 너무 좁히거나 과장한 것.
@@ -86,6 +85,7 @@ public class QuizService {
 - (중복 회피) 보기들 사이 문구 반복 최소화, 단서 단어를 한 보기에만 몰아넣지 말 것.
 
 ※ 출력은 반드시 기존 JSON 스키마에 ‘딱 맞게’만 내고, 다른 텍스트는 절대 출력하지 않는다.
+각 문항에는 answerIndex와 함께 answerText(정답 보기의 문자열)도 반드시 포함한다.
 """;
 
         // (2) 사용자 입력: 본문과 난이도/톤 힌트만 전달
@@ -159,7 +159,8 @@ public class QuizService {
                 return new QuizResponse(false, sourceFileId, List.of(), "Invalid quiz format");
             }
 
-            var diversified = diversifyAnswerPositions(parsed.questions());
+            var reconciled = reconcileByAnswerText(parsed.questions());
+            var diversified = diversifyAnswerPositions(reconciled);
             return new QuizResponse(true, sourceFileId, diversified, null);
 
         } catch (Exception e) {
@@ -207,11 +208,10 @@ public class QuizService {
         return null;
     }
 
-    // QuizService 내부에 추가
+    // ✅ 기존 로직 유지 + answerText 세팅만 추가
     private List<QuizResponse.Item> diversifyAnswerPositions(List<QuizResponse.Item> items) {
         if (items == null || items.size() != 5) return items;
 
-        // 0,1,2,3,4를 섞어서 "문항별 목표 정답 위치"를 미리 배정
         var desired = new java.util.ArrayList<>(java.util.List.of(0, 1, 2, 3, 4));
         java.util.Collections.shuffle(desired);
 
@@ -227,7 +227,7 @@ public class QuizService {
             var choices = new java.util.ArrayList<>(q.choices());
             java.util.Collections.shuffle(choices);
 
-            // 섞인 리스트에서 정답 위치
+            // 섞인 리스트에서 정답의 현재 위치
             int curIdx = choices.indexOf(correct);
             if (curIdx < 0) {
                 // 동일 텍스트 중복 등 특수 케이스 방어
@@ -235,7 +235,7 @@ public class QuizService {
                 correct = choices.get(0);
             }
 
-            // 이 문항의 목표 정답 위치(각 문항마다 모두 다른 위치)
+            // 이 문항의 목표 정답 위치
             int targetIdx = desired.get(i);
 
             // 목표 위치와 다르면 swap
@@ -245,13 +245,53 @@ public class QuizService {
                 choices.set(curIdx, tmp);
             }
 
-            // 새 answerIndex로 재구성
+            // ✅ answerText는 최종 정답 위치의 보기 문자열로 세팅
+            String answerText = choices.get(targetIdx);
+
             out.add(new QuizResponse.Item(
                     q.id(),
                     q.question(),
                     java.util.List.copyOf(choices),
                     targetIdx,
-                    q.explanation()
+                    q.explanation(),
+                    answerText          // ← 새 필드 추가
+            ));
+        }
+        return java.util.List.copyOf(out);
+    }
+
+    private List<QuizResponse.Item> reconcileByAnswerText(List<QuizResponse.Item> items) {
+        if (items == null) return List.of();
+        var out = new java.util.ArrayList<QuizResponse.Item>(items.size());
+
+        for (var q : items) {
+            var choices = q.choices();
+            int idx = q.answerIndex();
+            String answerText = q.answerText();
+
+            // 1) 현재 인덱스가 텍스트와 일치하는지 확인
+            boolean consistent = idx >= 0 && idx < choices.size()
+                    && choices.get(idx).equals(answerText);
+
+            // 2) 불일치면 텍스트로 인덱스 복구
+            if (!consistent) {
+                int byText = choices.indexOf(answerText);
+                if (byText >= 0) {
+                    idx = byText;
+                } else {
+                    // 텍스트가 보기에 없다면 마지막 안전장치: 0으로 보정
+                    // (원하면 여기서 전체 invalid 처리로 반환해도 됨)
+                    idx = 0;
+                }
+            }
+
+            out.add(new QuizResponse.Item(
+                    q.id(),
+                    q.question(),
+                    choices,
+                    idx,
+                    q.explanation(),
+                    answerText
             ));
         }
         return java.util.List.copyOf(out);
