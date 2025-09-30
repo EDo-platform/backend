@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -81,5 +82,30 @@ public class FileStorageService {
 
     public byte[] getBytes(String fileId) {
         return getMeta(fileId).getData();       // DB에서 바이너리 꺼내기
+    }
+
+    public FileMetadata storeBytes(byte[] bytes, String originalName, String contentType) {
+        String fileId = UUID.randomUUID().toString();
+
+        String safeName = (originalName == null || originalName.isBlank()) ? "unnamed" : originalName;
+        safeName = safeName.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_");
+        String ct = (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
+
+        FileMetadata meta = FileMetadata.builder()
+                .id(fileId)
+                .originalName(safeName)
+                .contentType(ct)
+                .size((long) (bytes == null ? 0 : bytes.length))
+                .data(bytes == null ? new byte[0] : bytes)
+                .build();
+
+        return fileRepo.save(meta);
+    }
+
+    /** 문자열을 UTF-8로 저장(예시 지문에 최적) */
+    public FileMetadata storeText(String text, String filename, String contentType) {
+        byte[] bytes = (text == null ? "" : text).getBytes(StandardCharsets.UTF_8);
+        String ct = (contentType == null || contentType.isBlank()) ? "text/plain; charset=UTF-8" : contentType;
+        return storeBytes(bytes, filename, ct);
     }
 }
