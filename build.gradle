@@ -16,6 +16,10 @@ java {
 
 repositories {
 	mavenCentral()
+
+	maven { url "https://maven-central-asia.storage-download.googleapis.com/maven2/" }
+	maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }
+	maven { url "https://repo1.maven.org/maven2" }
 }
 
 dependencies {
@@ -39,7 +43,6 @@ dependencies {
 	// 음성 인식 api 의존성
 	implementation 'com.google.cloud:google-cloud-speech:4.69.0'
 	implementation 'com.google.cloud:google-cloud-storage:2.40.0'
-
 
 	implementation "com.fasterxml.jackson.core:jackson-databind:2.17.2"
 	implementation "com.fasterxml.jackson.core:jackson-core:2.17.2"
