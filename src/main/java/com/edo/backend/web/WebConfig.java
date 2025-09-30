@@ -13,7 +13,7 @@ public class WebConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**") // 모든 API 경로 허용
-                        .allowedOrigins("https://e-do-education.vercel.app") // 특정 도메인만 허용
+                        .allowedOrigins("https://e-do-education.vercel.app", "https://e-do-education-one.vercel.app") // 특정 도메인만 허용
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true); // 쿠키/인증정보 포함 허용 (필요시)
