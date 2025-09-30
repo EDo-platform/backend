@@ -159,7 +159,8 @@ public class QuizService {
                 return new QuizResponse(false, sourceFileId, List.of(), "Invalid quiz format");
             }
 
-            return new QuizResponse(true, sourceFileId, parsed.questions(), null);
+            var diversified = diversifyAnswerPositions(parsed.questions());
+            return new QuizResponse(true, sourceFileId, diversified, null);
 
         } catch (Exception e) {
             return new QuizResponse(false, sourceFileId, List.of(), e.getMessage());
@@ -204,5 +205,55 @@ public class QuizService {
         if (t3.isTextual()) return t3.asText();
 
         return null;
+    }
+
+    // QuizService 내부에 추가
+    private List<QuizResponse.Item> diversifyAnswerPositions(List<QuizResponse.Item> items) {
+        if (items == null || items.size() != 5) return items;
+
+        // 0,1,2,3,4를 섞어서 "문항별 목표 정답 위치"를 미리 배정
+        var desired = new java.util.ArrayList<>(java.util.List.of(0, 1, 2, 3, 4));
+        java.util.Collections.shuffle(desired);
+
+        var out = new java.util.ArrayList<QuizResponse.Item>(5);
+
+        for (int i = 0; i < 5; i++) {
+            var q = items.get(i);
+
+            // 원래 정답 텍스트
+            String correct = q.choices().get(q.answerIndex());
+
+            // 보기 섞기
+            var choices = new java.util.ArrayList<>(q.choices());
+            java.util.Collections.shuffle(choices);
+
+            // 섞인 리스트에서 정답 위치
+            int curIdx = choices.indexOf(correct);
+            if (curIdx < 0) {
+                // 동일 텍스트 중복 등 특수 케이스 방어
+                curIdx = 0;
+                correct = choices.get(0);
+            }
+
+            // 이 문항의 목표 정답 위치(각 문항마다 모두 다른 위치)
+            int targetIdx = desired.get(i);
+
+            // 목표 위치와 다르면 swap
+            if (curIdx != targetIdx) {
+                String tmp = choices.get(targetIdx);
+                choices.set(targetIdx, correct);
+                choices.set(curIdx, tmp);
+            }
+
+            // 새 answerIndex로 재구성
+            out.add(new QuizResponse.Item(
+                    q.id(),
+                    q.question(),
+                    java.util.List.copyOf(choices),
+                    targetIdx,
+                    q.explanation()
+            ));
+        }
+        return java.util.List.copyOf(out);
     }
 }
