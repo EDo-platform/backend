@@ -34,14 +34,13 @@ public final class QuizSchema {
         Map<String, Object> obj = new HashMap<>();
         obj.put("type", "object");
         obj.put("additionalProperties", false);
-        obj.put("required", List.of("id", "question", "choices", "answerIndex", "explanation"));
+        obj.put("required", List.of("id", "question", "choices", "answerIndex", "answerText", "explanation"));
 
         Map<String, Object> props = new HashMap<>();
 
         Map<String, Object> idProp = new HashMap<>();
         idProp.put("type", "string");
         idProp.put("minLength", 1);
-        // 권장: "Q1"~"Q5" 형태
         props.put("id", idProp);
 
         Map<String, Object> questionProp = new HashMap<>();
@@ -64,6 +63,12 @@ public final class QuizSchema {
         answerIndexProp.put("minimum", 0);
         answerIndexProp.put("maximum", 4);
         props.put("answerIndex", answerIndexProp);
+
+        // ✅ 추가된 부분
+        Map<String, Object> answerTextProp = new HashMap<>();
+        answerTextProp.put("type", "string");
+        answerTextProp.put("minLength", 1);
+        props.put("answerText", answerTextProp);
 
         Map<String, Object> explanationProp = new HashMap<>();
         explanationProp.put("type", "string");
