@@ -101,7 +101,7 @@ public class SampleService {
                     "umbrella",
                     "우산에 대한 에피소드",
                     "umbrella.png",
-                    "test/plain",
+                    "text/plain",
                     "노랑우산에 대한 짧은 에피소드에 대한 지문"
             ),
             "trashcan", new SampleMeta(
@@ -123,7 +123,7 @@ public class SampleService {
                     "사물놀이의 종류",
                     "samulnori.png",
                     "text/plain",
-                    "사물놀이는 다양하게 조화로운 연주를 이끌어갑니다."
+                    "사물놀이는 다양하게 조화로운 연주를 이끌어갑니다"
             )
     );
 
