@@ -51,6 +51,12 @@ public class QuizService {
 
 [출제 원칙(형식은 기존 스키마를 그대로 유지)]
 - 총 5문항, 5지선다, 정답은 하나. (형식은 기존 JSON 스키마를 따른다)
+- 각 문항 객체에는 반드시 다음을 포함:
+                    - id, question, choices(길이 5), answerIndex(0~4), answerText(choices[answerIndex]와 동일), explanation
+                    - **hints.byChoice: 길이 5의 문자열 배열(각 선택지 인덱스에 대응).**
+                      - 정답 인덱스의 메시지는 “짧은 축하/확인”.
+                      - 오답 인덱스의 메시지는 “긍정으로 시작 + 본문 특정 단서(문장/단어/부분)를 다시 보게 하는 유도”.
+                      - 정답을 즉시 말하지 말 것.
 - 문제 순서 의도: ① 어휘 ② 중심내용 ③ 제목 ④ 사실확인 ⑤ 추론
 - 보기(오답) 설계는 ‘그럴듯하지만 틀린’ 이유가 분명해야 한다. 단순 농담/말장난/모호 금지.
 - 정답 문장은 지문을 ‘그대로 복붙’하지 말고, 가능하면 짧게 ‘의미를 바꿔 말하기(패러프레이즈)’ 하되, 사실확인 문제는 원문 사실을 정확히 반영.
@@ -85,7 +91,7 @@ public class QuizService {
 - (중복 회피) 보기들 사이 문구 반복 최소화, 단서 단어를 한 보기에만 몰아넣지 말 것.
 
 ※ 출력은 반드시 기존 JSON 스키마에 ‘딱 맞게’만 내고, 다른 텍스트는 절대 출력하지 않는다.
-각 문항에는 answerIndex와 함께 answerText(정답 보기의 문자열)도 반드시 포함한다.
+각 문항에는 answerIndex와 함께 answerText가 모두 있어야 하며, hints.byChoice는 반드시 길이 5여야 한다.
 """;
 
         // (2) 사용자 입력: 본문과 난이도/톤 힌트만 전달
@@ -99,6 +105,7 @@ public class QuizService {
 - 난이도: %s
 - 말투/피드백 스타일(톤): %s
 - 위 시스템 가이드에 따라, 아이가 ‘생각하며’ 고르도록 보기(오답)를 정교하게 설계하라.
+- 각 문항에 **hints.byChoice(길이 5)**를 반드시 포함할 것.
 - 정답은 본문 근거와 일치해야 하며, 오답은 그럴듯하지만 서로 다른 오해 유형을 반영해야 한다.
 - 정답 문장은 가능하면 본문을 그대로 베끼지 말고 짧게 바꿔 말해라(사실확인 제외).
 - 출력은 기존 JSON 스키마 형식을 정확히 따를 것. (JSON 외 텍스트 금지)
@@ -119,7 +126,6 @@ public class QuizService {
                 ),
                 "max_output_tokens", 1536,
                 "temperature", 0.3
-                // ⚠ seed는 Responses API에서 미지원 → 제거
         );
 
         try {
@@ -153,6 +159,10 @@ public class QuizService {
                             && q.answerIndex() >= 0 && q.answerIndex() < 5
                             && q.question() != null && !q.question().isBlank()
                             && q.explanation() != null && !q.explanation().isBlank()
+                            && q.answerText() != null && !q.answerText().isBlank()
+                            && q.hints() != null
+                            && q.hints().byChoice() != null
+                            && q.hints().byChoice().size() == 5
             );
 
             if (!valid) {
@@ -208,7 +218,6 @@ public class QuizService {
         return null;
     }
 
-    // ✅ 기존 로직 유지 + answerText 세팅만 추가
     private List<QuizResponse.Item> diversifyAnswerPositions(List<QuizResponse.Item> items) {
         if (items == null || items.size() != 5) return items;
 
@@ -220,32 +229,42 @@ public class QuizService {
         for (int i = 0; i < 5; i++) {
             var q = items.get(i);
 
-            // 원래 정답 텍스트
-            String correct = q.choices().get(q.answerIndex());
+            // 원본
+            var origChoices = q.choices();
+            var origByChoice = q.hints().byChoice();
 
-            // 보기 섞기
-            var choices = new java.util.ArrayList<>(q.choices());
-            java.util.Collections.shuffle(choices);
+            // 같은 퍼뮤테이션으로 재배열
+            var order = new java.util.ArrayList<>(java.util.List.of(0, 1, 2, 3, 4));
+            java.util.Collections.shuffle(order);
 
-            // 섞인 리스트에서 정답의 현재 위치
+            var choices = new java.util.ArrayList<String>(5);
+            var byChoice = new java.util.ArrayList<String>(5);
+            for (int idx : order) {
+                choices.add(origChoices.get(idx));
+                byChoice.add(origByChoice.get(idx));
+            }
+
+            // 정답 텍스트 기준 현재 위치
+            String correct = (q.answerText() != null && !q.answerText().isBlank())
+                    ? q.answerText()
+                    : origChoices.get(Math.max(0, Math.min(q.answerIndex(), origChoices.size() - 1)));
             int curIdx = choices.indexOf(correct);
-            if (curIdx < 0) {
-                // 동일 텍스트 중복 등 특수 케이스 방어
-                curIdx = 0;
-                correct = choices.get(0);
-            }
+            if (curIdx < 0) { curIdx = 0; correct = choices.get(0); }
 
-            // 이 문항의 목표 정답 위치
+            // 목표 정답 위치
             int targetIdx = desired.get(i);
-
-            // 목표 위치와 다르면 swap
             if (curIdx != targetIdx) {
-                String tmp = choices.get(targetIdx);
+                // choices 스왑
+                String tmpC = choices.get(targetIdx);
                 choices.set(targetIdx, correct);
-                choices.set(curIdx, tmp);
+                choices.set(curIdx, tmpC);
+
+                // hints.byChoice도 동일 스왑
+                String tmpH = byChoice.get(targetIdx);
+                byChoice.set(targetIdx, byChoice.get(curIdx));
+                byChoice.set(curIdx, tmpH);
             }
 
-            // ✅ answerText는 최종 정답 위치의 보기 문자열로 세팅
             String answerText = choices.get(targetIdx);
 
             out.add(new QuizResponse.Item(
@@ -254,7 +273,8 @@ public class QuizService {
                     java.util.List.copyOf(choices),
                     targetIdx,
                     q.explanation(),
-                    answerText          // ← 새 필드 추가
+                    answerText,
+                    new QuizResponse.Hints(java.util.List.copyOf(byChoice))
             ));
         }
         return java.util.List.copyOf(out);
@@ -291,7 +311,8 @@ public class QuizService {
                     choices,
                     idx,
                     q.explanation(),
-                    answerText
+                    answerText,
+                    q.hints()
             ));
         }
         return java.util.List.copyOf(out);
