@@ -100,6 +100,7 @@ public final class QuizSchema {
 
         hintsProps.put("byChoice", byChoiceProp);
         hintsProp.put("properties", hintsProps);
+        hintsProp.put("required", List.of("byChoice"));
         props.put("hints", hintsProp);
 
         obj.put("properties", props);
