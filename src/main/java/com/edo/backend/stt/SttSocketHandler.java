@@ -2,6 +2,7 @@ package com.edo.backend.stt;
 
 import com.google.api.gax.rpc.BidiStream;
 import com.google.cloud.speech.v2.*;
+import com.google.protobuf.ByteString;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
@@ -10,10 +11,9 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.BinaryWebSocketHandler;
 
+import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 @Component
 public class SttSocketHandler extends BinaryWebSocketHandler {
@@ -23,67 +23,98 @@ public class SttSocketHandler extends BinaryWebSocketHandler {
 
     public SttSocketHandler(@Value("${gcp.project-id}") String projectId) throws Exception {
         this.speechClient = SpeechClient.create();
-
         if (projectId == null || projectId.isBlank()) {
             throw new IllegalStateException("❌ GCP project-id is not set. Check env GCP_PROJECT_ID");
         }
-
-        this.recognizerName = String.format(
-                "projects/%s/locations/global/recognizers/_",
-                projectId
-        );
-
+        // '_' = 암시적 Recognizer (v2에서 허용)
+        this.recognizerName = String.format("projects/%s/locations/global/recognizers/_", projectId);
         System.out.println("✅ recognizerName = " + recognizerName);
     }
 
     private static class SessionCtx {
         BidiStream<StreamingRecognizeRequest, StreamingRecognizeResponse> stream;
         ExecutorService reader;
+        FFmpegTranscoder ff;
+        Future<?> pumpTask;
         volatile boolean inputClosed = false;
     }
 
     private final ConcurrentHashMap<String, SessionCtx> sessions = new ConcurrentHashMap<>();
+    private final ExecutorService ioPool = Executors.newCachedThreadPool();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        // 1) GCP Streaming 스트림 열기
+        // 1) gRPC 스트림 생성
         BidiStream<StreamingRecognizeRequest, StreamingRecognizeResponse> stream =
                 speechClient.streamingRecognizeCallable().call();
 
-        // 2) Config 전송 (먼저 1회)
+        // 2) 인식 설정(v2 방식: 명시적 디코딩 설정)
+        ExplicitDecodingConfig dec = ExplicitDecodingConfig.newBuilder()
+                .setEncoding(ExplicitDecodingConfig.AudioEncoding.LINEAR16) // <-- 여기!
+                .setSampleRateHertz(16000)
+                .setAudioChannelCount(1)
+                .build();
+
         RecognitionConfig recConfig = RecognitionConfig.newBuilder()
-                .setAutoDecodingConfig(AutoDetectDecodingConfig.getDefaultInstance())
                 .addLanguageCodes("ko-KR")
                 .setModel("latest_long")
                 .setFeatures(RecognitionFeatures.newBuilder()
                         .setEnableAutomaticPunctuation(true)
                         .build())
+                .setExplicitDecodingConfig(dec) // <-- RecognitionConfig에 붙이기
                 .build();
 
-// ✅ v2: interim_results / VAD는 StreamingRecognitionFeatures에 설정
         StreamingRecognitionFeatures sFeatures = StreamingRecognitionFeatures.newBuilder()
-                .setInterimResults(true)            // partial 결과 받기
-                .setEnableVoiceActivityEvents(false) // 필요 시 true
+                .setInterimResults(true)
+                .setEnableVoiceActivityEvents(false)
                 .build();
 
         StreamingRecognitionConfig streamingCfg = StreamingRecognitionConfig.newBuilder()
                 .setConfig(recConfig)
-                .setStreamingFeatures(sFeatures)     // ✅ 여기!
+                .setStreamingFeatures(sFeatures)
                 .build();
 
+        // 첫 요청: 설정만
         stream.send(StreamingRecognizeRequest.newBuilder()
                 .setRecognizer(recognizerName)
                 .setStreamingConfig(streamingCfg)
                 .build());
 
-        // 3) 응답 읽기 스레드
+        // 3) FFmpeg 시작 (임의 포맷 → s16le/16k/mono)
+        FFmpegTranscoder ff = new FFmpegTranscoder();
+        InputStream pcm = ff.stdout();
+
+        // 4) FFmpeg stdout(PCM)을 15KB 미만으로 잘라 gRPC로 전송
+        Future<?> pumpTask = ioPool.submit(() -> {
+            final int SLICE = 14_000; // 자바 레퍼런스 상한(15KB)보다 적게
+            byte[] buf = new byte[4096];
+            byte[] spill = new byte[0];
+            int n;
+            try {
+                while ((n = pcm.read(buf)) > 0) {
+                    // spill + buf[0..n) 를 SLICE 크기로 분할
+                    byte[] chunk = concat(spill, buf, n);
+                    int off = 0;
+                    while (off < chunk.length) {
+                        int len = Math.min(SLICE, chunk.length - off);
+                        stream.send(StreamingRecognizeRequest.newBuilder()
+                                .setAudio(ByteString.copyFrom(chunk, off, len))
+                                .build());
+                        off += len;
+                    }
+                    // 남는 건 없도록(정확히 분할했으니 남지 않음)
+                    spill = new byte[0];
+                }
+            } catch (Exception e) {
+                System.err.println("PCM pump error: " + e.getMessage());
+            }
+        });
+
+        // 5) 응답 읽기(부분/최종)
         ExecutorService reader = Executors.newSingleThreadExecutor();
         reader.submit(() -> {
             try {
                 for (StreamingRecognizeResponse resp : stream) {
-                    // 디버깅용 최소 로그 (여기서 과한 System.out은 유지해도 됨)
-                    // System.out.println("📩 Got STT response: " + resp.getResultsCount());
-
                     if (resp.getResultsCount() == 0) continue;
                     var r = resp.getResults(0);
                     if (r.getAlternativesCount() == 0) continue;
@@ -94,15 +125,11 @@ public class SttSocketHandler extends BinaryWebSocketHandler {
                             "{\"type\":\"transcript\",\"final\":%s,\"text\":%s}",
                             isFinal, jsonEscape(text)
                     );
-                    if (session.isOpen()) {
-                        session.sendMessage(new TextMessage(payload));
-                    }
+                    if (session.isOpen()) session.sendMessage(new TextMessage(payload));
                 }
             } catch (Exception e) {
-                // ✅ 에러를 브라우저로 먼저 전송 (연결을 즉시 닫지 않음)
-                String err = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+                String err = e.getClass().getSimpleName() + ": " + e.getMessage();
                 System.err.println("❌ STT stream error: " + err);
-                e.printStackTrace();
                 try {
                     if (session.isOpen()) {
                         session.sendMessage(new TextMessage(
@@ -110,95 +137,83 @@ public class SttSocketHandler extends BinaryWebSocketHandler {
                         ));
                     }
                 } catch (Exception ignored) {}
-                // 여기서 session.close() 하지 말기! (브라우저가 에러를 볼 시간 필요)
             }
-            // finally 없음: 자동 종료 금지. 필요하면 stop 핸드셰이크에서 닫기.
         });
 
         var ctx = new SessionCtx();
         ctx.stream = stream;
         ctx.reader = reader;
+        ctx.ff = ff;
+        ctx.pumpTask = pumpTask;
         sessions.put(session.getId(), ctx);
     }
 
     @Override
     protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
         SessionCtx ctx = sessions.get(session.getId());
-        if (ctx == null) return;
-
-        // ✅ stop 이후 들어온 청크는 바로 버림
-        if (ctx.inputClosed) {
-            // 선택: 디버깅 로그
-            // System.out.println("⏭️ ignore chunk after stop: " + message.getPayloadLength() + " bytes");
-            return;
-        }
+        if (ctx == null || ctx.inputClosed) return;
 
         ByteBuffer buf = message.getPayload();
         int size = buf.remaining();
-        System.out.println("🎤 Received audio chunk: " + size + " bytes");
-
+        System.out.println("🎤 Received media chunk: " + size + " bytes");
         byte[] bytes = new byte[size];
-        buf.get(bytes);
+        buf.get(bytes); // direct/slice 대응
 
         try {
-            // v2: setAudio(...)
-            ctx.stream.send(StreamingRecognizeRequest.newBuilder()
-                    .setAudio(com.google.protobuf.ByteString.copyFrom(bytes))
-                    .build());
-        } catch (IllegalStateException ise) {
-            // ✅ closeSend() 이후 늦게 도착한 청크가 send되면 여기로 옴 → 조용히 무시
-            System.out.println("⏭️ ignore send after half-close: " + ise.getMessage());
+            // 임의 컨테이너/코덱 → ffmpeg stdin으로 투입
+            ctx.ff.stdin().write(bytes);
+            ctx.ff.stdin().flush();
         } catch (Exception e) {
-            System.err.println("❌ send audio failed: " + e.getMessage());
-            // 필요시 클라이언트에 에러 전달
+            System.err.println("❌ write to ffmpeg failed: " + e.getMessage());
             try {
                 if (session.isOpen()) {
-                    String msg = "{\"type\":\"error\",\"message\":" + jsonEscape("send audio failed: " + e.getMessage()) + "}";
+                    String msg = "{\"type\":\"error\",\"message\":" + jsonEscape("transcode write failed: " + e.getMessage()) + "}";
                     session.sendMessage(new TextMessage(msg));
                 }
             } catch (Exception ignored) {}
         }
     }
 
-    // --- 텍스트(제어) 처리 ---
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         SessionCtx ctx = sessions.get(session.getId());
         if (ctx == null) return;
 
-        String payload = message.getPayload();
-        if ("{\"type\":\"stop\"}".equals(payload)) {
-            System.out.println("🛑 stop received -> closeSend()");
-            // ✅ 더 이상 오디오 받지 않도록 플래그 세팅
+        if ("{\"type\":\"stop\"}".equals(message.getPayload())) {
+            System.out.println("🛑 stop received -> close ffmpeg stdin & GCP half-close");
             ctx.inputClosed = true;
-            try {
-                // ✅ GCP 스트림 입력만 닫고(final 수신은 계속)
-                ctx.stream.closeSend();
-            } catch (Exception e) {
-                System.err.println("closeSend() failed: " + e.getMessage());
-            }
-            // 여기서는 session.close() 하지 않음 (reader가 final까지 받고 나서 닫게)
+            try { ctx.ff.stdin().close(); } catch (Exception ignored) {}
+            try { ctx.stream.closeSend(); } catch (Exception ignored) {}
         }
     }
 
-    // --- 연결 종료(soft close) ---
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         SessionCtx ctx = sessions.remove(session.getId());
         if (ctx != null) {
+            ctx.inputClosed = true;
+            try { ctx.ff.stdin().close(); } catch (Exception ignored) {}
+            try { if (ctx.pumpTask != null) ctx.pumpTask.get(1500, TimeUnit.MILLISECONDS); } catch (Exception ignored) {}
             try { ctx.stream.closeSend(); } catch (Exception ignored) {}
-            if (ctx.reader != null) {
-                // ✅ 강제 인터럽트 대신 부드럽게 종료
-                ctx.reader.shutdown();
-                // 필요시 일정 시간 기다렸다가 강제 종료:
-                // try { if (!ctx.reader.awaitTermination(3, TimeUnit.SECONDS)) ctx.reader.shutdownNow(); } catch (InterruptedException ignored) {}
-            }
+            try { ctx.ff.close(); } catch (Exception ignored) {}
+            if (ctx.reader != null) ctx.reader.shutdown();
         }
         System.out.println("🔌 STT WebSocket closed: " + session.getId() + " (" + status + ")");
     }
 
-
     private static String jsonEscape(String s) {
         return "\"" + s.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n") + "\"";
+    }
+
+    private static byte[] concat(byte[] a, byte[] b, int nB) {
+        if (a.length == 0) {
+            byte[] out = new byte[nB];
+            System.arraycopy(b, 0, out, 0, nB);
+            return out;
+        }
+        byte[] out = new byte[a.length + nB];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, nB);
+        return out;
     }
 }
