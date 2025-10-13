@@ -23,8 +23,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-        container.setMaxTextMessageBufferSize(32768);   // 32KB
-        container.setMaxBinaryMessageBufferSize(32768); // 32KB
+        container.setMaxTextMessageBufferSize(32768);     // 32KB
+        container.setMaxBinaryMessageBufferSize(262144);  // 256KB (상향)
         return container;
     }
 }
